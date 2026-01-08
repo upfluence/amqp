@@ -1,3 +1,4 @@
+// Package logger provides logging middleware for AMQP brokers.
 package logger
 
 import (
@@ -10,15 +11,19 @@ import (
 	"github.com/upfluence/amqp"
 )
 
+// Logger is the interface for logging broker operations.
 type Logger interface {
+	// Log records a broker operation with its result, duration, and optional fields.
 	Log(string, error, time.Duration, ...record.Field)
 }
 
+// simplifiedLogger adapts a log.Logger to the Logger interface.
 type simplifiedLogger struct {
 	level  record.Level
 	logger log.Logger
 }
 
+// Log logs an operation at the configured level with duration and optional fields.
 func (l *simplifiedLogger) Log(operation string, err error, d time.Duration, ofs ...record.Field) {
 	logger := l.logger.WithFields(log.Field("duration", d))
 
@@ -33,14 +38,17 @@ func (l *simplifiedLogger) Log(operation string, err error, d time.Duration, ofs
 	logger.Log(l.level, operation)
 }
 
+// NewFactory creates a middleware factory with a custom logger implementation.
 func NewFactory(l Logger) amqp.MiddlewareFactory {
 	return &factory{l: l}
 }
 
+// NewLevelFactory creates a middleware factory that logs at the specified level.
 func NewLevelFactory(l log.Logger, lvl record.Level) amqp.MiddlewareFactory {
 	return NewFactory(&simplifiedLogger{logger: l, level: lvl})
 }
 
+// NewDebugFactory creates a middleware factory that logs at debug level.
 func NewDebugFactory(l log.Logger) amqp.MiddlewareFactory {
 	return NewLevelFactory(l, record.Debug)
 }

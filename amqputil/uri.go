@@ -1,3 +1,4 @@
+// Package amqputil provides utility functions for creating AMQP brokers with common configurations.
 package amqputil
 
 import (
@@ -8,6 +9,8 @@ import (
 	"github.com/upfluence/amqp/backend"
 )
 
+// peerTable converts peer information to AMQP connection properties.
+// These properties are visible in the RabbitMQ management UI.
 func peerTable(p *peer.Peer) map[string]interface{} {
 	if p == nil {
 		return nil
@@ -22,16 +25,20 @@ func peerTable(p *peer.Peer) map[string]interface{} {
 	}
 }
 
+// Option configures the broker builder.
 type Option func(*builder)
 
+// WithURL sets the AMQP connection URL.
 func WithURL(uri string) Option {
 	return func(b *builder) { b.uri = uri }
 }
 
+// WithMiddleware adds a middleware factory to wrap the broker.
 func WithMiddleware(f amqp.MiddlewareFactory) Option {
 	return func(b *builder) { b.middlewares = append(b.middlewares, f) }
 }
 
+// builder accumulates configuration for creating a broker.
 type builder struct {
 	uri string
 
@@ -39,12 +46,14 @@ type builder struct {
 	middlewares []amqp.MiddlewareFactory
 }
 
+// options converts builder configuration to backend options.
 func (b *builder) options() []backend.Option {
 	return []backend.Option{
 		backend.WithProperties(peerTable(b.peer)),
 	}
 }
 
+// Open creates a new AMQP broker with environment-based configuration.
 func Open(opts ...Option) amqp.Broker {
 	b := builder{
 		uri:  envutil.FetchString("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2f"),

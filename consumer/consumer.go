@@ -1,3 +1,4 @@
+// Package consumer provides utilities for managing AMQP consumers with pooling and anonymous queues.
 package consumer
 
 import (
@@ -13,39 +14,56 @@ import (
 
 var errInvalidConsumerType = errors.New("invalid consumer type")
 
+// Consumer extends the amqp.Consumer interface with a QueueName method.
 type Consumer interface {
 	amqp.Consumer
 
+	// QueueName returns the name of the queue this consumer is consuming from.
 	QueueName() string
 }
 
+// consumer is the internal implementation of Consumer.
 type consumer struct {
 	amqp.Consumer
 
 	queueName string
 }
 
+// Open is a no-op that satisfies the iopool.Resource interface.
 func (c *consumer) Open(context.Context) error {
 	return nil
 }
 
+// QueueName returns the name of the queue this consumer is consuming from.
 func (c *consumer) QueueName() string {
 	return c.queueName
 }
 
+// ConsumerPool manages a pool of consumers for efficient resource usage.
 type ConsumerPool interface {
+	// Get retrieves a consumer from the pool, creating a new one if necessary.
 	Get(context.Context) (Consumer, error)
+
+	// Put returns a consumer to the pool for reuse.
 	Put(context.Context, Consumer) error
+
+	// Discard removes a consumer from the pool and closes it.
+	// Use this when a consumer is in a bad state and should not be reused.
 	Discard(context.Context, Consumer) error
+
+	// Close closes all consumers in the pool.
 	Close() error
 }
 
+// consumerPool implements ConsumerPool.
 type consumerPool struct {
 	*iopool.Pool[*consumer]
 }
 
+// Get retrieves a consumer from the pool.
 func (cp *consumerPool) Get(ctx context.Context) (Consumer, error) { return cp.Pool.Get(ctx) }
 
+// Put returns a consumer to the pool for reuse.
 func (cp *consumerPool) Put(ctx context.Context, c Consumer) error {
 	cons, ok := c.(*consumer)
 
@@ -56,6 +74,7 @@ func (cp *consumerPool) Put(ctx context.Context, c Consumer) error {
 	return cp.Pool.Put(cons)
 }
 
+// Discard removes a consumer from the pool and closes it.
 func (cp *consumerPool) Discard(ctx context.Context, c Consumer) error {
 	cons, ok := c.(*consumer)
 
@@ -66,6 +85,7 @@ func (cp *consumerPool) Discard(ctx context.Context, c Consumer) error {
 	return cp.Pool.Discard(cons)
 }
 
+// NewConsumerPool creates a new consumer pool.
 func NewConsumerPool(b amqp.Broker, opts amqp.ConsumeOptions, popts ...iopool.Option) ConsumerPool {
 	return &consumerPool{
 		Pool: iopool.NewPool(
@@ -77,6 +97,7 @@ func NewConsumerPool(b amqp.Broker, opts amqp.ConsumeOptions, popts ...iopool.Op
 	}
 }
 
+// BuildConsumer creates a consumer with an automatically generated queue name.
 func BuildConsumer(ctx context.Context, b amqp.Broker, opts amqp.ConsumeOptions) (Consumer, error) {
 	return buildConsumer(ctx, b, opts)
 }

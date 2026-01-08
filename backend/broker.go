@@ -1,3 +1,7 @@
+// Package backend provides the RabbitMQ implementation of the amqp.Broker interface.
+//
+// This package implements connection management, channel pooling, and automatic reconnection
+// for RabbitMQ servers using the AMQP 0.9.1 protocol.
 package backend
 
 import (
@@ -34,8 +38,10 @@ func (o *options) amqpConfig() ramqp.Config {
 	return cfg
 }
 
+// Option configures a Broker.
 type Option func(*options)
 
+// WithProperties sets connection properties that are sent to the AMQP server during connection.
 func WithProperties(props map[string]interface{}) Option {
 	return func(o *options) {
 		o.configOptions = append(o.configOptions, func(c *ramqp.Config) {
@@ -50,14 +56,22 @@ func WithProperties(props map[string]interface{}) Option {
 	}
 }
 
+// BrokerStats contains statistics about the broker's connection and channel usage.
 type BrokerStats struct {
+	// ConnectionOpened indicates whether the connection to the AMQP server is currently open.
 	ConnectionOpened bool
 
-	IdleChannel      int
-	InUseChannel     int
+	// IdleChannel is the number of channels in the pool that are idle and ready for use.
+	IdleChannel int
+
+	// InUseChannel is the number of channels currently in use for operations.
+	InUseChannel int
+
+	// ConsumingChannel is the number of channels actively consuming messages.
 	ConsumingChannel int
 }
 
+// Broker is the RabbitMQ implementation of the amqp.Broker interface.
 type Broker struct {
 	conn *ramqp.Connection
 	uri  string
@@ -74,6 +88,12 @@ type Broker struct {
 	channelPool *iopool.Pool[*channelWrapper]
 }
 
+// NewBroker creates a new Broker connected to the specified AMQP URI.
+//
+// The URI format is: amqp://username:password@host:port/vhost
+//
+// The broker does not connect immediately; the connection is established
+// lazily on the first operation.
 func NewBroker(uri string, opts ...Option) *Broker {
 	var o = options{
 		channelPoolOptions: []iopool.Option{iopool.WithSize(2048), iopool.WithMaxIdle(16)},
@@ -97,6 +117,7 @@ func NewBroker(uri string, opts ...Option) *Broker {
 	return &b
 }
 
+// Stats returns current statistics about the broker's connection and channel usage.
 func (b *Broker) Stats() BrokerStats {
 	return BrokerStats{
 		ConnectionOpened: b.conn != nil && !b.conn.IsClosed(),
@@ -162,6 +183,7 @@ func (b *Broker) getConn(ctx context.Context) (*ramqp.Connection, error) {
 	return conn, err
 }
 
+// Close closes the broker, releasing all channels and the connection.
 func (b *Broker) Close() error {
 	err := b.channelPool.Close()
 
@@ -173,6 +195,7 @@ func (b *Broker) Close() error {
 
 }
 
+// Publish sends a message to an exchange with a routing key.
 func (b *Broker) Publish(ctx context.Context, exchange, key string, msg amqp.Message, opts amqp.PublishOptions) error {
 	return b.execute(ctx, func(ch *ramqp.Channel) error {
 		return ch.PublishWithContext(
@@ -232,6 +255,7 @@ func (b *Broker) discardChannel(ch *channelWrapper) error {
 	return errors.Wrap(err, "failed to discard channel")
 }
 
+// ConsumeAnonymous creates a temporary queue with an auto-generated name and starts consuming.
 func (b *Broker) ConsumeAnonymous(ctx context.Context, opts amqp.ConsumeOptions) (string, amqp.Consumer, error) {
 	ch, err := b.getChannel(ctx)
 
@@ -274,6 +298,7 @@ func (b *Broker) ConsumeAnonymous(ctx context.Context, opts amqp.ConsumeOptions)
 	}, nil
 }
 
+// Consume starts consuming messages from a queue.
 func (b *Broker) Consume(ctx context.Context, queue string, opts amqp.ConsumeOptions) (amqp.Consumer, error) {
 	ch, err := b.getChannel(ctx)
 
@@ -324,12 +349,14 @@ func (b *Broker) execute(ctx context.Context, fn func(*ramqp.Channel) error) err
 	return b.putChannel(ch)
 }
 
+// Qos sets Quality of Service parameters for message delivery.
 func (b *Broker) Qos(ctx context.Context, opts amqp.QosOptions) error {
 	return b.execute(ctx, func(ch *ramqp.Channel) error {
 		return ch.Qos(opts.PrefetchCount, opts.PrefetchSize, opts.Global)
 	})
 }
 
+// DeclareQueue creates a queue or verifies that it exists with the given parameters.
 func (b *Broker) DeclareQueue(ctx context.Context, queue string, opts amqp.DeclareQueueOptions) error {
 	return b.execute(ctx, func(ch *ramqp.Channel) error {
 		_, err := ch.QueueDeclare(
@@ -345,6 +372,7 @@ func (b *Broker) DeclareQueue(ctx context.Context, queue string, opts amqp.Decla
 	})
 }
 
+// DeclareExchange creates an exchange or verifies that it exists with the given parameters.
 func (b *Broker) DeclareExchange(ctx context.Context, ex string, kind amqp.ExchangeKind, opts amqp.DeclareExchangeOptions) error {
 	return b.execute(ctx, func(ch *ramqp.Channel) error {
 		return ch.ExchangeDeclare(
@@ -359,6 +387,7 @@ func (b *Broker) DeclareExchange(ctx context.Context, ex string, kind amqp.Excha
 	})
 }
 
+// BindQueue creates a binding between a queue and an exchange with a routing key.
 func (b *Broker) BindQueue(ctx context.Context, queue, key, exchange string, opts amqp.BindQueueOptions) error {
 	return b.execute(context.Background(), func(ch *ramqp.Channel) error {
 		return ch.QueueBind(
