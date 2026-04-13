@@ -6,7 +6,7 @@ import (
 	"github.com/upfluence/pkg/v2/peer"
 
 	"github.com/upfluence/amqp"
-	"github.com/upfluence/amqp/backend"
+	"github.com/upfluence/amqp/backend/rabbitmq"
 )
 
 // peerTable converts peer information to AMQP connection properties.
@@ -38,10 +38,10 @@ func WithMiddleware(f amqp.MiddlewareFactory) Option {
 	return func(b *builder) { b.middlewares = append(b.middlewares, f) }
 }
 
-// WithBrokerOption passes a backend.Option directly to the underlying broker.
-// Use this to configure low-level backend behaviour (e.g. channel pool size,
+// WithBrokerOption passes a rabbitmq.Option directly to the underlying broker.
+// Use this to configure low-level rabbitmq behaviour (e.g. channel pool size,
 // reconnect delay) that is not exposed through the higher-level Option API.
-func WithBrokerOption(opt backend.Option) Option {
+func WithBrokerOption(opt rabbitmq.Option) Option {
 	return func(b *builder) { b.backendOpts = append(b.backendOpts, opt) }
 }
 
@@ -51,13 +51,13 @@ type builder struct {
 
 	peer        *peer.Peer
 	middlewares []amqp.MiddlewareFactory
-	backendOpts []backend.Option
+	backendOpts []rabbitmq.Option
 }
 
-// options converts builder configuration to backend options.
-func (b *builder) options() []backend.Option {
+// options converts builder configuration to rabbitmq options.
+func (b *builder) options() []rabbitmq.Option {
 	return append(
-		[]backend.Option{backend.WithProperties(peerTable(b.peer))},
+		[]rabbitmq.Option{rabbitmq.WithProperties(peerTable(b.peer))},
 		b.backendOpts...,
 	)
 }
@@ -73,7 +73,7 @@ func Open(opts ...Option) amqp.Broker {
 		opt(&b)
 	}
 
-	var res amqp.Broker = backend.NewBroker(b.uri, b.options()...)
+	var res amqp.Broker = rabbitmq.NewBroker(b.uri, b.options()...)
 
 	for _, m := range b.middlewares {
 		res = m.Wrap(res)

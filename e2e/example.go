@@ -7,7 +7,7 @@ import (
 
 	"github.com/upfluence/amqp"
 	"github.com/upfluence/amqp/amqputil"
-	"github.com/upfluence/amqp/backend"
+	"github.com/upfluence/amqp/backend/rabbitmq"
 	"github.com/upfluence/amqp/consumer"
 	"github.com/upfluence/pkg/v2/log"
 )
@@ -16,7 +16,7 @@ func main() {
 	var (
 		wg sync.WaitGroup
 
-		b   = amqputil.Open().(*backend.Broker)
+		b   = amqputil.Open().(*rabbitmq.Broker)
 		ctx = context.Background()
 
 		c, err = consumer.BuildConsumer(ctx, b, amqp.ConsumeOptions{})

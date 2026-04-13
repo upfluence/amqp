@@ -1,8 +1,8 @@
-// Package backend provides the RabbitMQ implementation of the amqp.Broker interface.
+// Package rabbitmq provides the RabbitMQ implementation of the amqp.Broker interface.
 //
 // This package implements connection management, channel pooling, and automatic reconnection
 // for RabbitMQ servers using the AMQP 0.9.1 protocol.
-package backend
+package rabbitmq
 
 import (
 	"context"
