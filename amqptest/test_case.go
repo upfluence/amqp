@@ -41,6 +41,13 @@ type TestCase struct {
 
 type TestCaseOption func(*TestCase)
 
+// WithBrokerOptions appends amqputil.Option values that are forwarded to the
+// broker created by the test case. Use this to pass backend-level options
+// (e.g. amqputil.WithBrokerOption(...)) or additional middleware.
+func WithBrokerOptions(opts ...amqputil.Option) TestCaseOption {
+	return func(tc *TestCase) { tc.opts = append(tc.opts, opts...) }
+}
+
 // NewTestCase creates a new test case that can run tests against RabbitMQ.
 // By default, it uses the RABBITMQ_URL environment variable, or skips the test if not set.
 func NewTestCase(opts ...TestCaseOption) *TestCase {

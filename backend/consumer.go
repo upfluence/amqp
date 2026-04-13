@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	ramqp "github.com/rabbitmq/amqp091-go"
 	"github.com/upfluence/errors"
@@ -18,12 +19,12 @@ var ErrConsumerClosed = errors.New("consumer is closed")
 // It wraps a channel and manages the lifecycle of message consumption.
 type consumer struct {
 	broker     *Broker
-	consumer   string                // consumer tag
+	consumer   string                // consumer tag (set at construction time)
 	channel    *channelWrapper       // dedicated channel for this consumer
 	deliveries <-chan ramqp.Delivery // delivery channel from RabbitMQ
 
 	closedOnce sync.Once
-	closed     bool
+	closed     atomic.Bool
 }
 
 // Next waits for and returns the next message delivery.
@@ -38,10 +39,6 @@ func (c *consumer) Next(ctx context.Context) (*amqp.Delivery, error) {
 	case d, ok := <-c.deliveries:
 		if !ok {
 			return nil, c.cleanup(io.EOF)
-		}
-
-		if c.consumer == "" {
-			c.consumer = d.ConsumerTag
 		}
 
 		return &amqp.Delivery{
@@ -71,7 +68,7 @@ func (c *consumer) Next(ctx context.Context) (*amqp.Delivery, error) {
 // A consumer becomes inactive when it's explicitly closed or when the underlying
 // channel is closed by the server (e.g., due to connection loss).
 func (c *consumer) IsOpen() bool {
-	if c.closed {
+	if c.closed.Load() {
 		return false
 	}
 
@@ -100,12 +97,14 @@ func (c *consumer) Nack(_ context.Context, tag uint64, opts amqp.NackOptions) er
 // If inboundError is nil, the consumer is cancelled gracefully.
 // If inboundError is not nil, the channel is discarded (not returned to pool).
 // This ensures that a channel with an error is not reused.
+//
+// Calling cleanup more than once is safe; subsequent calls are no-ops and
+// return nil.
 func (c *consumer) cleanup(inboundError error) error {
-	var err error = ErrConsumerClosed
+	var err error
 
 	c.closedOnce.Do(func() {
-		c.closed = true
-		c.broker.consuming.Add(-1)
+		c.closed.Store(true)
 
 		if inboundError == nil {
 			err = c.channel.Cancel(c.consumer, false)

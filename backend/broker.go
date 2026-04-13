@@ -16,6 +16,7 @@ import (
 	"github.com/upfluence/pkg/v2/iopool"
 	"github.com/upfluence/pkg/v2/limiter"
 	"github.com/upfluence/pkg/v2/limiter/rate"
+	"github.com/upfluence/pkg/v2/log"
 	"github.com/upfluence/pkg/v2/syncutil"
 )
 
@@ -73,7 +74,7 @@ type BrokerStats struct {
 
 // Broker is the RabbitMQ implementation of the amqp.Broker interface.
 type Broker struct {
-	conn *ramqp.Connection
+	conn atomic.Pointer[ramqp.Connection]
 	uri  string
 	cfg  ramqp.Config
 	sf   syncutil.Singleflight[*ramqp.Connection]
@@ -118,9 +119,10 @@ func NewBroker(uri string, opts ...Option) *Broker {
 // Stats returns current statistics about the broker's connection and channel usage.
 func (b *Broker) Stats() BrokerStats {
 	stats := b.channelPool.Stats()
+	conn := b.conn.Load()
 
 	return BrokerStats{
-		ConnectionOpened: b.conn != nil && !b.conn.IsClosed(),
+		ConnectionOpened: conn != nil && !conn.IsClosed(),
 		IdleChannel:      int(stats.Idle),
 		InUseChannel:     int(stats.InUse),
 		ConsumingChannel: int(b.consuming.Load()),
@@ -140,17 +142,17 @@ func (b *Broker) buildChannel(ctx context.Context) (*channelWrapper, error) {
 		return nil, errors.Wrap(err, "failed to create channel")
 	}
 
-	return &channelWrapper{Channel: ch, broker: b}, nil
+	return &channelWrapper{Channel: ch}, nil
 }
 
 func (b *Broker) getConn(ctx context.Context) (*ramqp.Connection, error) {
-	if b.conn != nil && !b.conn.IsClosed() {
-		return b.conn, nil
+	if conn := b.conn.Load(); conn != nil && !conn.IsClosed() {
+		return conn, nil
 	}
 
 	_, conn, err := b.sf.Do(ctx, func(ctx context.Context) (*ramqp.Connection, error) {
-		if b.conn != nil && !b.conn.IsClosed() {
-			return b.conn, nil
+		if conn := b.conn.Load(); conn != nil && !conn.IsClosed() {
+			return conn, nil
 		}
 
 		done, err := b.limiter.Allow(ctx, limiter.AllowOptions{})
@@ -173,9 +175,9 @@ func (b *Broker) getConn(ctx context.Context) (*ramqp.Connection, error) {
 			return nil, errors.Wrap(err, "failed to connect to AMQP server")
 		}
 
-		b.conn = conn
+		b.conn.Store(conn)
 
-		return b.conn, nil
+		return conn, nil
 	})
 
 	return conn, err
@@ -185,12 +187,11 @@ func (b *Broker) getConn(ctx context.Context) (*ramqp.Connection, error) {
 func (b *Broker) Close() error {
 	err := b.channelPool.Close()
 
-	if !b.conn.IsClosed() {
-		err = errors.Combine(err, b.conn.Close())
+	if conn := b.conn.Load(); conn != nil && !conn.IsClosed() {
+		err = errors.Combine(err, conn.Close())
 	}
 
 	return err
-
 }
 
 // Publish sends a message to an exchange with a routing key.
@@ -238,10 +239,10 @@ func (b *Broker) putChannel(ch *channelWrapper) error {
 	return errors.Wrap(err, "failed to put channel back to pool")
 }
 
-func (b *Broker) discardChannel(ch *channelWrapper) error {
-	err := b.channelPool.Discard(ch)
-
-	return errors.Wrap(err, "failed to discard channel")
+func (b *Broker) discardChannel(ch *channelWrapper) {
+	if err := b.channelPool.Discard(ch); err != nil {
+		log.WithError(err).Warning("failed to discard channel")
+	}
 }
 
 // ConsumeAnonymous creates a temporary queue with an auto-generated name and starts consuming.
@@ -339,6 +340,10 @@ func (b *Broker) execute(ctx context.Context, fn func(*ramqp.Channel) error) err
 }
 
 // Qos sets Quality of Service parameters for message delivery.
+//
+// Note: when opts.Global is false, QoS is applied only to the transient pool
+// channel used for this call and has no effect on existing consumer channels.
+// Pass opts.Global=true to apply the limit across the whole connection.
 func (b *Broker) Qos(ctx context.Context, opts amqp.QosOptions) error {
 	return b.execute(ctx, func(ch *ramqp.Channel) error {
 		return ch.Qos(opts.PrefetchCount, opts.PrefetchSize, opts.Global)
@@ -346,8 +351,15 @@ func (b *Broker) Qos(ctx context.Context, opts amqp.QosOptions) error {
 }
 
 // DeclareQueue creates a queue or verifies that it exists with the given parameters.
+// If opts.Passive is true, the server only checks whether the queue exists
+// (returning an error if it does not) without creating or modifying it.
 func (b *Broker) DeclareQueue(ctx context.Context, queue string, opts amqp.DeclareQueueOptions) error {
 	return b.execute(ctx, func(ch *ramqp.Channel) error {
+		if opts.Passive {
+			_, err := ch.QueueDeclarePassive(queue, opts.Durable, opts.AutoDelete, false, false, opts.Args)
+			return err
+		}
+
 		_, err := ch.QueueDeclare(
 			queue,
 			opts.Durable,
@@ -362,8 +374,14 @@ func (b *Broker) DeclareQueue(ctx context.Context, queue string, opts amqp.Decla
 }
 
 // DeclareExchange creates an exchange or verifies that it exists with the given parameters.
+// If opts.Passive is true, the server only checks whether the exchange exists
+// (returning an error if it does not) without creating or modifying it.
 func (b *Broker) DeclareExchange(ctx context.Context, ex string, kind amqp.ExchangeKind, opts amqp.DeclareExchangeOptions) error {
 	return b.execute(ctx, func(ch *ramqp.Channel) error {
+		if opts.Passive {
+			return ch.ExchangeDeclarePassive(ex, string(kind), opts.Durable, opts.AutoDelete, false, false, opts.Args)
+		}
+
 		return ch.ExchangeDeclare(
 			ex,
 			string(kind),
@@ -378,7 +396,7 @@ func (b *Broker) DeclareExchange(ctx context.Context, ex string, kind amqp.Excha
 
 // BindQueue creates a binding between a queue and an exchange with a routing key.
 func (b *Broker) BindQueue(ctx context.Context, queue, key, exchange string, opts amqp.BindQueueOptions) error {
-	return b.execute(context.Background(), func(ch *ramqp.Channel) error {
+	return b.execute(ctx, func(ch *ramqp.Channel) error {
 		return ch.QueueBind(
 			queue,
 			key,

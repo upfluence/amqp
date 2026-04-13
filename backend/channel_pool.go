@@ -14,7 +14,6 @@ import (
 type channelWrapper struct {
 	*ramqp.Channel
 
-	broker    *Broker
 	closeOnce sync.Once
 }
 
@@ -23,6 +22,7 @@ func (cw *channelWrapper) Open(context.Context) error { return nil }
 func (cw *channelWrapper) IsOpen() bool {
 	return !cw.Channel.IsClosed()
 }
+
 func (cw *channelWrapper) Close() error {
 	var err error
 

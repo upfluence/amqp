@@ -38,19 +38,28 @@ func WithMiddleware(f amqp.MiddlewareFactory) Option {
 	return func(b *builder) { b.middlewares = append(b.middlewares, f) }
 }
 
+// WithBrokerOption passes a backend.Option directly to the underlying broker.
+// Use this to configure low-level backend behaviour (e.g. channel pool size,
+// reconnect delay) that is not exposed through the higher-level Option API.
+func WithBrokerOption(opt backend.Option) Option {
+	return func(b *builder) { b.backendOpts = append(b.backendOpts, opt) }
+}
+
 // builder accumulates configuration for creating a broker.
 type builder struct {
 	uri string
 
 	peer        *peer.Peer
 	middlewares []amqp.MiddlewareFactory
+	backendOpts []backend.Option
 }
 
 // options converts builder configuration to backend options.
 func (b *builder) options() []backend.Option {
-	return []backend.Option{
-		backend.WithProperties(peerTable(b.peer)),
-	}
+	return append(
+		[]backend.Option{backend.WithProperties(peerTable(b.peer))},
+		b.backendOpts...,
+	)
 }
 
 // Open creates a new AMQP broker with environment-based configuration.

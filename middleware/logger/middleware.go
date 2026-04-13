@@ -97,7 +97,7 @@ func (ac *anonymousConsumer) ConsumeAnonymous(ctx context.Context, opts amqp.Con
 		return "", nil, err //nolint:wrapcheck
 	}
 
-	return queue, &consumerWrapper{c: consumer, l: ac.l, queue: queue}, nil
+	return queue, &consumerWrapper{Consumer: consumer, l: ac.l, queue: queue}, nil
 }
 
 type broker struct {
@@ -132,7 +132,7 @@ func (b *broker) Publish(ctx context.Context, exchange, key string, msg amqp.Mes
 
 func (b *broker) Consume(ctx context.Context, queue string, opts amqp.ConsumeOptions) (amqp.Consumer, error) {
 	t0 := time.Now()
-	consumer, err := b.b.Consume(ctx, queue, opts)
+	c, err := b.b.Consume(ctx, queue, opts)
 	b.l.Log(
 		"Consume",
 		err,
@@ -146,7 +146,7 @@ func (b *broker) Consume(ctx context.Context, queue string, opts amqp.ConsumeOpt
 		return nil, err //nolint:wrapcheck
 	}
 
-	return &consumerWrapper{c: consumer, l: b.l, queue: queue}, nil
+	return &consumerWrapper{Consumer: c, l: b.l, queue: queue}, nil
 }
 
 func (b *broker) Qos(ctx context.Context, opts amqp.QosOptions) error {
@@ -195,9 +195,9 @@ func (b *broker) DeclareExchange(ctx context.Context, name string, kind amqp.Exc
 	return err //nolint:wrapcheck
 }
 
-func (b *broker) BindQueue(ctx context.Context, queue, exchange, key string, opts amqp.BindQueueOptions) error {
+func (b *broker) BindQueue(ctx context.Context, queue, key, exchange string, opts amqp.BindQueueOptions) error {
 	t0 := time.Now()
-	err := b.b.BindQueue(ctx, queue, exchange, key, opts)
+	err := b.b.BindQueue(ctx, queue, key, exchange, opts)
 	b.l.Log(
 		"BindQueue",
 		err,
@@ -210,15 +210,20 @@ func (b *broker) BindQueue(ctx context.Context, queue, exchange, key string, opt
 	return err //nolint:wrapcheck
 }
 
+// consumerWrapper wraps an amqp.Consumer to add logging around Close, Ack,
+// Nack, and errors from Next. It embeds the inner consumer so that any
+// additional interfaces it implements (e.g. consumer.Consumer with QueueName)
+// are transparently promoted.
 type consumerWrapper struct {
-	c     amqp.Consumer
+	amqp.Consumer
+
 	l     Logger
 	queue string
 }
 
 func (cw *consumerWrapper) Close() error {
 	t0 := time.Now()
-	err := cw.c.Close()
+	err := cw.Consumer.Close()
 	cw.l.Log(
 		"Consumer.Close",
 		err,
@@ -229,26 +234,21 @@ func (cw *consumerWrapper) Close() error {
 	return err //nolint:wrapcheck
 }
 
-func (cw *consumerWrapper) IsOpen() bool {
-	return cw.c.IsOpen()
-}
-
 func (cw *consumerWrapper) Next(ctx context.Context) (*amqp.Delivery, error) {
-	t0 := time.Now()
-	delivery, err := cw.c.Next(ctx)
-	cw.l.Log(
-		"Consumer.Next",
-		err,
-		time.Since(t0),
-		log.Field("queue", cw.queue),
-	)
+	delivery, err := cw.Consumer.Next(ctx)
+
+	// Only log when something went wrong; successful deliveries are high-volume
+	// and the blocking wait time is not meaningful as a latency signal.
+	if err != nil {
+		cw.l.Log("Consumer.Next", err, 0, log.Field("queue", cw.queue))
+	}
 
 	return delivery, err //nolint:wrapcheck
 }
 
 func (cw *consumerWrapper) Ack(ctx context.Context, tag uint64, opts amqp.AckOptions) error {
 	t0 := time.Now()
-	err := cw.c.Ack(ctx, tag, opts)
+	err := cw.Consumer.Ack(ctx, tag, opts)
 	cw.l.Log(
 		"Consumer.Ack",
 		err,
@@ -263,7 +263,7 @@ func (cw *consumerWrapper) Ack(ctx context.Context, tag uint64, opts amqp.AckOpt
 
 func (cw *consumerWrapper) Nack(ctx context.Context, tag uint64, opts amqp.NackOptions) error {
 	t0 := time.Now()
-	err := cw.c.Nack(ctx, tag, opts)
+	err := cw.Consumer.Nack(ctx, tag, opts)
 	cw.l.Log(
 		"Consumer.Nack",
 		err,
