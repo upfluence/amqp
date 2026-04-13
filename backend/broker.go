@@ -81,8 +81,6 @@ type Broker struct {
 	limiter limiter.Limiter
 	dialer  *net.Dialer
 
-	idle      atomic.Int64
-	used      atomic.Int64
 	consuming atomic.Int64
 
 	channelPool *iopool.Pool[*channelWrapper]
@@ -119,10 +117,12 @@ func NewBroker(uri string, opts ...Option) *Broker {
 
 // Stats returns current statistics about the broker's connection and channel usage.
 func (b *Broker) Stats() BrokerStats {
+	stats := b.channelPool.Stats()
+
 	return BrokerStats{
 		ConnectionOpened: b.conn != nil && !b.conn.IsClosed(),
-		IdleChannel:      int(b.idle.Load()),
-		InUseChannel:     int(b.used.Load()),
+		IdleChannel:      int(stats.Idle),
+		InUseChannel:     int(stats.InUse),
 		ConsumingChannel: int(b.consuming.Load()),
 	}
 }
@@ -139,8 +139,6 @@ func (b *Broker) buildChannel(ctx context.Context) (*channelWrapper, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create channel")
 	}
-
-	b.idle.Add(1)
 
 	return &channelWrapper{Channel: ch, broker: b}, nil
 }
@@ -231,26 +229,17 @@ func (b *Broker) getChannel(ctx context.Context) (*channelWrapper, error) {
 		return nil, errors.Wrap(err, "failed to get channel from pool")
 	}
 
-	b.idle.Add(-1)
-	b.used.Add(1)
-
 	return ch, nil
 }
 
 func (b *Broker) putChannel(ch *channelWrapper) error {
 	err := b.channelPool.Put(ch)
 
-	b.idle.Add(1)
-	b.used.Add(-1)
-
 	return errors.Wrap(err, "failed to put channel back to pool")
 }
 
 func (b *Broker) discardChannel(ch *channelWrapper) error {
 	err := b.channelPool.Discard(ch)
-
-	b.idle.Add(1)
-	b.used.Add(-1)
 
 	return errors.Wrap(err, "failed to discard channel")
 }

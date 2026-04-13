@@ -26,12 +26,12 @@ github.com/sirupsen/logrus v1.6.0 h1:UBcNElsrwanuuMsnGSlYmtmgbb23qDR5dG+6X6Oo89I
 github.com/sirupsen/logrus v1.6.0/go.mod h1:7uNnSEd1DgxDLC74fIahvMZmmYsHGZGEOFrfsX/uA88=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/upfluence/errors v0.2.15 h1:RtX6cPPB/DRRF2/lWIkjht3qA7fPj+9XfDusCQPMvc0=
-github.com/upfluence/errors v0.2.15/go.mod h1:F20G28/uHKxrcXwrufkVl7iy/SVozr+6w9Xyg5BEx0k=
+github.com/upfluence/errors v0.2.18 h1:POMbjrSD55D2IM6kDKkMQNdYft0RJwkwmhurBlD+eTE=
+github.com/upfluence/errors v0.2.18/go.mod h1:F20G28/uHKxrcXwrufkVl7iy/SVozr+6w9Xyg5BEx0k=
 github.com/upfluence/log v0.0.6 h1:cG+dq0CXTZTXGknzwZbQEW2QQH6KRjUu9rysdhmhBcA=
 github.com/upfluence/log v0.0.6/go.mod h1:pCbKPbgnoF5zqR9JsTgParTIEBvqXsIuaa8eoEVhdPA=
-github.com/upfluence/pkg/v2 v2.0.1 h1:W/Wrl009bJYCHohgPyn1x4sSsaPXRbvBpFGiSUG1Jjs=
-github.com/upfluence/pkg/v2 v2.0.1/go.mod h1:kpcAbVpENNtO8CblGl8nOqD0fp8G4WQQp4lgtat8j2U=
+github.com/upfluence/pkg/v2 v2.0.8 h1:pa+WHqBGvbXRqwF0aN0LiY490pRDxxaWv579IXu3PD0=
+github.com/upfluence/pkg/v2 v2.0.8/go.mod h1:pFgVfUUkt16E4oJV9fByCl7+hi2ZaGQOSM/Qc1Unsqg=
 github.com/upfluence/stats v0.1.9 h1:lCALzQXll2oMSj04hWCZu15vGVj140yR1V9tN/SclWU=
 github.com/upfluence/stats v0.1.9/go.mod h1:68ZOq0AWeoZlgdp9M50Vxbtxl6+HCtsMlAcSEQmSr4Y=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
