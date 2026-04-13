@@ -105,6 +105,10 @@ type broker struct {
 	l Logger
 }
 
+func (b *broker) Unwrap() amqp.Broker {
+	return b.b
+}
+
 func (b *broker) Close() error {
 	t0 := time.Now()
 	err := b.b.Close()

@@ -406,3 +406,15 @@ func (b *Broker) BindQueue(ctx context.Context, queue, key, exchange string, opt
 		)
 	})
 }
+
+func GetStats(b amqp.Broker) BrokerStats {
+	if ub, ok := b.(interface{ Unwrap() amqp.Broker }); ok {
+		return GetStats(ub.Unwrap())
+	}
+
+	if sb, ok := b.(interface{ Stats() BrokerStats }); ok {
+		return sb.Stats()
+	}
+
+	return BrokerStats{}
+}
