@@ -114,8 +114,8 @@ func (c *consumer) cleanup(inboundError error) error {
 			c.broker.discardChannel(c.channel)
 
 			err = inboundError
-		} else {
-			c.broker.putChannel(c.channel)
+		} else if pErr := c.broker.putChannel(c.channel); pErr != nil {
+			err = pErr
 		}
 	})
 

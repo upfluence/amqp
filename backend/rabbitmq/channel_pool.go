@@ -20,7 +20,7 @@ type channelWrapper struct {
 func (cw *channelWrapper) Open(context.Context) error { return nil }
 
 func (cw *channelWrapper) IsOpen() bool {
-	return !cw.Channel.IsClosed()
+	return !cw.IsClosed()
 }
 
 func (cw *channelWrapper) Close() error {

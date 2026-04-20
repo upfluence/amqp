@@ -5,11 +5,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/upfluence/pkg/v2/log"
+
 	"github.com/upfluence/amqp"
 	"github.com/upfluence/amqp/amqputil"
 	"github.com/upfluence/amqp/backend/rabbitmq"
 	"github.com/upfluence/amqp/consumer"
-	"github.com/upfluence/pkg/v2/log"
 )
 
 func main() {
@@ -71,6 +72,7 @@ func main() {
 				if err != nil {
 					log.Errorf("failed to create consumer: %v", err)
 					time.Sleep(5 * time.Second)
+
 					continue
 				}
 			}
@@ -80,6 +82,7 @@ func main() {
 				if err != nil {
 					log.Errorf("failed to get next message: %v", err)
 					time.Sleep(5 * time.Second)
+
 					break
 				}
 
@@ -91,5 +94,4 @@ func main() {
 	}()
 
 	wg.Wait()
-
 }

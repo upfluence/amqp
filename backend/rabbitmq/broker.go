@@ -6,18 +6,20 @@ package rabbitmq
 
 import (
 	"context"
+	"maps"
 	"net"
 	"sync/atomic"
 	"time"
 
 	ramqp "github.com/rabbitmq/amqp091-go"
-	"github.com/upfluence/amqp"
 	"github.com/upfluence/errors"
 	"github.com/upfluence/pkg/v2/iopool"
 	"github.com/upfluence/pkg/v2/limiter"
 	"github.com/upfluence/pkg/v2/limiter/rate"
 	"github.com/upfluence/pkg/v2/log"
 	"github.com/upfluence/pkg/v2/syncutil"
+
+	"github.com/upfluence/amqp"
 )
 
 type options struct {
@@ -43,16 +45,14 @@ func (o *options) amqpConfig() ramqp.Config {
 type Option func(*options)
 
 // WithProperties sets connection properties that are sent to the AMQP server during connection.
-func WithProperties(props map[string]interface{}) Option {
+func WithProperties(props map[string]any) Option {
 	return func(o *options) {
 		o.configOptions = append(o.configOptions, func(c *ramqp.Config) {
 			if c.Properties == nil {
-				c.Properties = make(map[string]interface{})
+				c.Properties = make(map[string]any)
 			}
 
-			for k, v := range props {
-				c.Properties[k] = v
-			}
+			maps.Copy(c.Properties, props)
 		})
 	}
 }
@@ -357,6 +357,7 @@ func (b *Broker) DeclareQueue(ctx context.Context, queue string, opts amqp.Decla
 	return b.execute(ctx, func(ch *ramqp.Channel) error {
 		if opts.Passive {
 			_, err := ch.QueueDeclarePassive(queue, opts.Durable, opts.AutoDelete, false, false, opts.Args)
+
 			return err
 		}
 

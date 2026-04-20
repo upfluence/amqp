@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/upfluence/log/record"
 
 	"github.com/upfluence/amqp"
 	"github.com/upfluence/amqp/amqputil"
 	"github.com/upfluence/amqp/middleware/logger"
-	"github.com/upfluence/log/record"
 )
 
 type testLogger struct {
@@ -18,19 +20,21 @@ type testLogger struct {
 }
 
 func (tl testLogger) Log(operation string, err error, d time.Duration, fs ...record.Field) {
-	var b = fmt.Sprintf("[duration: %v]", d)
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "[duration: %v]", d)
 
 	for _, f := range fs {
-		b += fmt.Sprintf("[%s: %v]", f.GetKey(), f.GetValue())
+		fmt.Fprintf(&b, "[%s: %v]", f.GetKey(), f.GetValue())
 	}
 
 	if err != nil {
-		b += fmt.Sprintf("[error: %v]", err)
+		fmt.Fprintf(&b, "[error: %v]", err)
 	}
 
-	b += " " + operation
+	fmt.Fprintf(&b, " %s", operation)
 
-	tl.TB.Log(b)
+	tl.TB.Log(b.String())
 }
 
 type TestCase struct {
@@ -82,6 +86,7 @@ func (tc *TestCase) Run(t *testing.T, fn func(t *testing.T, broker amqp.Broker))
 
 	if tc.amqpURL == "" {
 		t.Skip("No RABBITMQ_URL environment variable set, skipping test case")
+
 		return
 	}
 

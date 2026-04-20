@@ -7,9 +7,10 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/upfluence/amqp"
 	"github.com/upfluence/errors"
 	"github.com/upfluence/pkg/v2/iopool"
+
+	"github.com/upfluence/amqp"
 )
 
 var errInvalidConsumerType = errors.New("invalid consumer type")
@@ -39,8 +40,8 @@ func (c *consumer) QueueName() string {
 	return c.queueName
 }
 
-// ConsumerPool manages a pool of consumers for efficient resource usage.
-type ConsumerPool interface {
+// Pool manages a pool of consumers for efficient resource usage.
+type Pool interface {
 	// Get retrieves a consumer from the pool, creating a new one if necessary.
 	Get(context.Context) (Consumer, error)
 
@@ -55,7 +56,7 @@ type ConsumerPool interface {
 	Close() error
 }
 
-// consumerPool implements ConsumerPool.
+// consumerPool implements Pool.
 type consumerPool struct {
 	*iopool.Pool[*consumer]
 }
@@ -64,7 +65,7 @@ type consumerPool struct {
 func (cp *consumerPool) Get(ctx context.Context) (Consumer, error) { return cp.Pool.Get(ctx) }
 
 // Put returns a consumer to the pool for reuse.
-func (cp *consumerPool) Put(ctx context.Context, c Consumer) error {
+func (cp *consumerPool) Put(_ context.Context, c Consumer) error {
 	cons, ok := c.(*consumer)
 
 	if !ok {
@@ -75,7 +76,7 @@ func (cp *consumerPool) Put(ctx context.Context, c Consumer) error {
 }
 
 // Discard removes a consumer from the pool and closes it.
-func (cp *consumerPool) Discard(ctx context.Context, c Consumer) error {
+func (cp *consumerPool) Discard(_ context.Context, c Consumer) error {
 	cons, ok := c.(*consumer)
 
 	if !ok {
@@ -86,7 +87,7 @@ func (cp *consumerPool) Discard(ctx context.Context, c Consumer) error {
 }
 
 // NewConsumerPool creates a new consumer pool.
-func NewConsumerPool(b amqp.Broker, opts amqp.ConsumeOptions, popts ...iopool.Option) ConsumerPool {
+func NewConsumerPool(b amqp.Broker, opts amqp.ConsumeOptions, popts ...iopool.Option) Pool {
 	return &consumerPool{
 		Pool: iopool.NewPool(
 			func(ctx context.Context) (*consumer, error) {

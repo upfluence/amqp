@@ -11,12 +11,12 @@ import (
 
 // peerTable converts peer information to AMQP connection properties.
 // These properties are visible in the RabbitMQ management UI.
-func peerTable(p *peer.Peer) map[string]interface{} {
+func peerTable(p *peer.Peer) map[string]any {
 	if p == nil {
 		return nil
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"upfluence-unit-name":    p.InstanceName,
 		"upfluence-app-name":     p.AppName,
 		"upfluence-project-name": p.ProjectName,
