@@ -9,11 +9,10 @@ import (
 
 	"github.com/upfluence/errors"
 	"github.com/upfluence/pkg/v2/iopool"
+	"github.com/upfluence/pkg/v2/pool"
 
 	"github.com/upfluence/amqp"
 )
-
-var errInvalidConsumerType = errors.New("invalid consumer type")
 
 // Consumer extends the amqp.Consumer interface with a QueueName method.
 type Consumer interface {
@@ -41,61 +40,20 @@ func (c *consumer) QueueName() string {
 }
 
 // Pool manages a pool of consumers for efficient resource usage.
-type Pool interface {
-	// Get retrieves a consumer from the pool, creating a new one if necessary.
-	Get(context.Context) (Consumer, error)
-
-	// Put returns a consumer to the pool for reuse.
-	Put(context.Context, Consumer) error
-
-	// Discard removes a consumer from the pool and closes it.
-	// Use this when a consumer is in a bad state and should not be reused.
-	Discard(context.Context, Consumer) error
-
-	// Close closes all consumers in the pool.
-	Close() error
-}
-
-// consumerPool implements Pool.
-type consumerPool struct {
-	*iopool.Pool[*consumer]
-}
-
-// Get retrieves a consumer from the pool.
-func (cp *consumerPool) Get(ctx context.Context) (Consumer, error) { return cp.Pool.Get(ctx) }
-
-// Put returns a consumer to the pool for reuse.
-func (cp *consumerPool) Put(_ context.Context, c Consumer) error {
-	cons, ok := c.(*consumer)
-
-	if !ok {
-		return errInvalidConsumerType
-	}
-
-	return cp.Pool.Put(cons)
-}
-
-// Discard removes a consumer from the pool and closes it.
-func (cp *consumerPool) Discard(_ context.Context, c Consumer) error {
-	cons, ok := c.(*consumer)
-
-	if !ok {
-		return errInvalidConsumerType
-	}
-
-	return cp.Pool.Discard(cons)
-}
+type Pool = pool.Pool[Consumer]
 
 // NewConsumerPool creates a new consumer pool.
 func NewConsumerPool(b amqp.Broker, opts amqp.ConsumeOptions, popts ...iopool.Option) Pool {
-	return &consumerPool{
-		Pool: iopool.NewPool(
+	return pool.NewTransformPool(
+		iopool.NewPool(
 			func(ctx context.Context) (*consumer, error) {
 				return buildConsumer(ctx, b, opts)
 			},
 			popts...,
 		),
-	}
+		func(cons *consumer) Consumer { return cons },
+		func(c Consumer) *consumer { return c.(*consumer) },
+	)
 }
 
 // BuildConsumer creates a consumer with an automatically generated queue name.

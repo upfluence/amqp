@@ -7,7 +7,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/upfluence/errors v0.2.18
 	github.com/upfluence/log v0.0.6
-	github.com/upfluence/pkg/v2 v2.1.0
+	github.com/upfluence/pkg/v2 v2.1.1
 )
 
 require (

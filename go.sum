@@ -34,6 +34,8 @@ github.com/upfluence/pkg/v2 v2.0.8 h1:pa+WHqBGvbXRqwF0aN0LiY490pRDxxaWv579IXu3PD
 github.com/upfluence/pkg/v2 v2.0.8/go.mod h1:pFgVfUUkt16E4oJV9fByCl7+hi2ZaGQOSM/Qc1Unsqg=
 github.com/upfluence/pkg/v2 v2.1.0 h1:LefiLfMsaIDma76ZqjrycUnfnwNHyX1JX63DFxxMnIQ=
 github.com/upfluence/pkg/v2 v2.1.0/go.mod h1:pFgVfUUkt16E4oJV9fByCl7+hi2ZaGQOSM/Qc1Unsqg=
+github.com/upfluence/pkg/v2 v2.1.1 h1:YEyvnCIdl3qFtia3dB9Lxt5fK6q3/3GrLGbc98Ixd8U=
+github.com/upfluence/pkg/v2 v2.1.1/go.mod h1:pFgVfUUkt16E4oJV9fByCl7+hi2ZaGQOSM/Qc1Unsqg=
 github.com/upfluence/stats v0.1.9 h1:lCALzQXll2oMSj04hWCZu15vGVj140yR1V9tN/SclWU=
 github.com/upfluence/stats v0.1.9/go.mod h1:68ZOq0AWeoZlgdp9M50Vxbtxl6+HCtsMlAcSEQmSr4Y=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
