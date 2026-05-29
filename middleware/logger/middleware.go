@@ -75,6 +75,14 @@ type extendedBroker struct {
 	amqp.Broker
 }
 
+func (b *extendedBroker) Unwrap() amqp.Broker {
+	if ub, ok := b.Broker.(interface{ Unwrap() amqp.Broker }); ok {
+		return ub.Unwrap()
+	}
+
+	return b.Broker
+}
+
 type anonymousConsumer struct {
 	c amqp.AnonymousConsumer
 	l Logger
@@ -178,6 +186,7 @@ func (b *broker) DeclareQueue(ctx context.Context, name string, opts amqp.Declar
 		log.Field("queue", name),
 		log.Field("durable", opts.Durable),
 		log.Field("auto_delete", opts.AutoDelete),
+		log.Field("exclusive", opts.Exclusive),
 	)
 
 	return err //nolint:wrapcheck
@@ -215,14 +224,20 @@ func (b *broker) BindQueue(ctx context.Context, queue, key, exchange string, opt
 }
 
 // consumerWrapper wraps an amqp.Consumer to add logging around Close, Ack,
-// Nack, and errors from Next. It embeds the inner consumer so that any
-// additional interfaces it implements (e.g. consumer.Consumer with QueueName)
-// are transparently promoted.
+// Nack, and errors from Next.
 type consumerWrapper struct {
 	amqp.Consumer
 
 	l     Logger
 	queue string
+}
+
+func (cw *consumerWrapper) QueueName() string {
+	if c, ok := cw.Consumer.(interface{ QueueName() string }); ok {
+		return c.QueueName()
+	}
+
+	return cw.queue
 }
 
 func (cw *consumerWrapper) Close() error {

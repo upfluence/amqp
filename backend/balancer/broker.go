@@ -176,11 +176,7 @@ func (c *consumer) Close() error {
 func (c *consumer) Next(ctx context.Context) (*amqp.Delivery, error) {
 	d, err := c.c.Next(ctx)
 
-	switch {
-	case err == nil:
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return d, err
-	default:
+	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		c.fn(err)
 	}
 
