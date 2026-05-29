@@ -102,6 +102,7 @@ func (tc *TestCase) Run(t *testing.T, fn func(t *testing.T, broker amqp.Broker))
 		// Declare and delete a test queue to ensure connection is working
 		err := broker.DeclareQueue(ctx, testQueue, amqp.DeclareQueueOptions{
 			AutoDelete: true,
+			Exclusive:  true,
 		})
 
 		if err != nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/upfluence/amqp"
 	"github.com/upfluence/amqp/amqptest"
+	"github.com/upfluence/amqp/backend/rabbitmq"
 )
 
 func TestBroker(t *testing.T) {
@@ -30,6 +31,7 @@ func TestBroker(t *testing.T) {
 		err = broker.DeclareQueue(ctx, queueName, amqp.DeclareQueueOptions{
 			Durable:    false,
 			AutoDelete: true,
+			Exclusive:  true,
 		})
 		require.NoError(t, err, "Failed to declare queue")
 
@@ -103,5 +105,32 @@ func TestBrokerConsumeAnonymously(t *testing.T) {
 
 		err = consumer.Ack(ctx, delivery.DeliveryTag, amqp.AckOptions{})
 		require.NoError(t, err, "Failed to acknowledge message")
+	})
+}
+
+func TestBrokerStatsConsumingChannel(t *testing.T) {
+	amqptest.NewTestCase().Run(t, func(t *testing.T, broker amqp.Broker) {
+		ctx := context.Background()
+
+		queueName := fmt.Sprintf("test-stats-queue-%d", time.Now().UnixNano())
+
+		err := broker.DeclareQueue(ctx, queueName, amqp.DeclareQueueOptions{
+			Durable:    false,
+			AutoDelete: true,
+			Exclusive:  true,
+		})
+		require.NoError(t, err, "Failed to declare queue")
+
+		consumer, err := broker.Consume(ctx, queueName, amqp.ConsumeOptions{})
+		require.NoError(t, err, "Failed to start consumer")
+
+		stats := rabbitmq.GetStats(broker)
+		assert.Equal(t, 1, stats.ConsumingChannel)
+
+		err = consumer.Close()
+		require.NoError(t, err, "Failed to close consumer")
+
+		stats = rabbitmq.GetStats(broker)
+		assert.Equal(t, 0, stats.ConsumingChannel)
 	})
 }

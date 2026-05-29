@@ -105,17 +105,16 @@ func (c *consumer) cleanup(inboundError error) error {
 
 	c.closedOnce.Do(func() {
 		c.closed.Store(true)
+		c.broker.consuming.Add(-1)
 
 		if inboundError == nil {
 			err = c.channel.Cancel(c.consumer, false)
 		}
 
-		if inboundError != nil || err != nil {
-			c.broker.discardChannel(c.channel)
+		c.broker.discardChannel(c.channel)
 
+		if inboundError != nil {
 			err = inboundError
-		} else if pErr := c.broker.putChannel(c.channel); pErr != nil {
-			err = pErr
 		}
 	})
 

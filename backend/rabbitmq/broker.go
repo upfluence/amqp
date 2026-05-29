@@ -8,6 +8,7 @@ import (
 	"context"
 	"maps"
 	"net"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -85,6 +86,16 @@ type Broker struct {
 	consuming atomic.Int64
 
 	channelPool *iopool.Pool[*channelWrapper]
+}
+
+var consumerSeq atomic.Uint64
+
+func consumerTag(tag string) string {
+	if tag != "" {
+		return tag
+	}
+
+	return "upfluence-amqp-" + strconv.FormatUint(consumerSeq.Add(1), 10)
 }
 
 // NewBroker creates a new Broker connected to the specified AMQP URI.
@@ -261,31 +272,13 @@ func (b *Broker) ConsumeAnonymous(ctx context.Context, opts amqp.ConsumeOptions)
 		return "", nil, errors.Wrap(err, "failed to start consuming from queue")
 	}
 
-	deliveries, err := ch.ConsumeWithContext(
-		ctx,
-		q.Name,
-		opts.Consumer,
-		opts.AutoACK,
-		opts.Exclusive,
-		false, // noLocal not supported by RabbitMQ
-		false,
-		opts.Args,
-	)
+	cons, err := b.consumeFromQueue(ctx, ch, q.Name, opts)
 
 	if err != nil {
-		b.discardChannel(ch)
-
-		return "", nil, errors.Wrap(err, "failed to start consuming from queue")
+		return "", nil, err
 	}
 
-	b.consuming.Add(1)
-
-	return q.Name, &consumer{
-		broker:     b,
-		consumer:   opts.Consumer,
-		channel:    ch,
-		deliveries: deliveries,
-	}, nil
+	return q.Name, cons, nil
 }
 
 // Consume starts consuming messages from a queue.
@@ -296,10 +289,23 @@ func (b *Broker) Consume(ctx context.Context, queue string, opts amqp.ConsumeOpt
 		return nil, err
 	}
 
-	deliveries, err := ch.ConsumeWithContext(
-		ctx,
+	return b.consumeFromQueue(ctx, ch, queue, opts)
+}
+
+func (b *Broker) consumeFromQueue(ctx context.Context, ch *channelWrapper, queue string, opts amqp.ConsumeOptions) (amqp.Consumer, error) {
+	tag := consumerTag(opts.Consumer)
+
+	select {
+	case <-ctx.Done():
+		b.discardChannel(ch)
+
+		return nil, ctx.Err()
+	default:
+	}
+
+	deliveries, err := ch.Consume(
 		queue,
-		opts.Consumer,
+		tag,
 		opts.AutoACK,
 		opts.Exclusive,
 		false, // noLocal not supported by RabbitMQ
@@ -317,7 +323,7 @@ func (b *Broker) Consume(ctx context.Context, queue string, opts amqp.ConsumeOpt
 
 	return &consumer{
 		broker:     b,
-		consumer:   opts.Consumer,
+		consumer:   tag,
 		channel:    ch,
 		deliveries: deliveries,
 	}, nil
@@ -356,7 +362,7 @@ func (b *Broker) Qos(ctx context.Context, opts amqp.QosOptions) error {
 func (b *Broker) DeclareQueue(ctx context.Context, queue string, opts amqp.DeclareQueueOptions) error {
 	return b.execute(ctx, func(ch *ramqp.Channel) error {
 		if opts.Passive {
-			_, err := ch.QueueDeclarePassive(queue, opts.Durable, opts.AutoDelete, false, false, opts.Args)
+			_, err := ch.QueueDeclarePassive(queue, opts.Durable, opts.AutoDelete, opts.Exclusive, false, opts.Args)
 
 			return err
 		}
@@ -365,7 +371,7 @@ func (b *Broker) DeclareQueue(ctx context.Context, queue string, opts amqp.Decla
 			queue,
 			opts.Durable,
 			opts.AutoDelete,
-			false,
+			opts.Exclusive,
 			false,
 			opts.Args,
 		)

@@ -101,6 +101,10 @@ type DeclareQueueOptions struct {
 	// AutoDelete when true, the queue is deleted when the last consumer disconnects.
 	AutoDelete bool
 
+	// Exclusive when true, the queue is scoped to this connection and deleted when
+	// the connection closes.
+	Exclusive bool
+
 	// Args contains optional queue arguments.
 	Args map[string]any
 }

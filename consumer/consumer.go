@@ -86,7 +86,7 @@ func buildConsumer(ctx context.Context, b amqp.Broker, opts amqp.ConsumeOptions)
 	if err := b.DeclareQueue(
 		ctx,
 		qName,
-		amqp.DeclareQueueOptions{AutoDelete: true},
+		amqp.DeclareQueueOptions{AutoDelete: true, Exclusive: true},
 	); err != nil {
 		return nil, errors.Wrap(err, "failed to declare queue for consumer")
 	}
