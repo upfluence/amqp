@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/upfluence/errors"
 	"github.com/upfluence/pkg/v2/discovery/balancer"
 	"github.com/upfluence/pkg/v2/discovery/balancer/simple"
 	"github.com/upfluence/pkg/v2/discovery/resolver/static"
@@ -85,13 +86,7 @@ func (b *Broker) Consume(ctx context.Context, queue string, opts amqp.ConsumeOpt
 		return nil, err
 	}
 
-	var once sync.Once
-
-	notify := func(err error) {
-		once.Do(func() { done(err) })
-	}
-
-	return &consumer{c: c, fn: notify}, nil
+	return newConsumer(c, done), nil
 }
 
 func (b *Broker) ConsumeAnonymous(ctx context.Context, opts amqp.ConsumeOptions) (string, amqp.Consumer, error) {
@@ -112,7 +107,7 @@ func (b *Broker) ConsumeAnonymous(ctx context.Context, opts amqp.ConsumeOptions)
 			return "", nil, err
 		}
 
-		return c.QueueName(), &consumer{c: c, fn: done}, nil
+		return c.QueueName(), newConsumer(c, done), nil
 	}
 
 	queue, c, err := ac.ConsumeAnonymous(ctx, opts)
@@ -123,13 +118,7 @@ func (b *Broker) ConsumeAnonymous(ctx context.Context, opts amqp.ConsumeOptions)
 		return "", nil, err
 	}
 
-	var once sync.Once
-
-	notify := func(err error) {
-		once.Do(func() { done(err) })
-	}
-
-	return queue, &consumer{c: c, fn: notify}, nil
+	return queue, newConsumer(c, done), nil
 }
 
 func (b *Broker) Qos(ctx context.Context, opts amqp.QosOptions) error {
@@ -161,6 +150,17 @@ type consumer struct {
 	fn func(error)
 }
 
+func newConsumer(c amqp.Consumer, done func(error)) *consumer {
+	var once sync.Once
+
+	return &consumer{
+		c: c,
+		fn: func(err error) {
+			once.Do(func() { done(err) })
+		},
+	}
+}
+
 func (c *consumer) IsOpen() bool {
 	return c.c.IsOpen()
 }
@@ -176,7 +176,11 @@ func (c *consumer) Close() error {
 func (c *consumer) Next(ctx context.Context) (*amqp.Delivery, error) {
 	d, err := c.c.Next(ctx)
 
-	if err != nil {
+	switch {
+	case err == nil:
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return d, err
+	default:
 		c.fn(err)
 	}
 
