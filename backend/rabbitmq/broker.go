@@ -303,6 +303,14 @@ func (b *Broker) consumeFromQueue(ctx context.Context, ch *channelWrapper, queue
 	default:
 	}
 
+	if opts.PrefetchCount > 0 || opts.PrefetchSize > 0 {
+		if err := ch.Qos(opts.PrefetchCount, opts.PrefetchSize, false); err != nil {
+			b.discardChannel(ch)
+
+			return nil, errors.Wrap(err, "failed to set consumer prefetch")
+		}
+	}
+
 	deliveries, err := ch.Consume(
 		queue,
 		tag,
@@ -343,17 +351,6 @@ func (b *Broker) execute(ctx context.Context, fn func(*ramqp.Channel) error) err
 	}
 
 	return b.putChannel(ch)
-}
-
-// Qos sets Quality of Service parameters for message delivery.
-//
-// Note: when opts.Global is false, QoS is applied only to the transient pool
-// channel used for this call and has no effect on existing consumer channels.
-// Pass opts.Global=true to apply the limit across the whole connection.
-func (b *Broker) Qos(ctx context.Context, opts amqp.QosOptions) error {
-	return b.execute(ctx, func(ch *ramqp.Channel) error {
-		return ch.Qos(opts.PrefetchCount, opts.PrefetchSize, opts.Global)
-	})
 }
 
 // DeclareQueue creates a queue or verifies that it exists with the given parameters.

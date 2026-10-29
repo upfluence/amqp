@@ -108,6 +108,48 @@ func TestBrokerConsumeAnonymously(t *testing.T) {
 	})
 }
 
+func TestBrokerConsumePrefetchCount(t *testing.T) {
+	amqptest.NewTestCase().Run(t, func(t *testing.T, broker amqp.Broker) {
+		ctx := context.Background()
+
+		queueName := fmt.Sprintf("test-prefetch-queue-%d", time.Now().UnixNano())
+
+		err := broker.DeclareQueue(ctx, queueName, amqp.DeclareQueueOptions{
+			Durable:    false,
+			AutoDelete: true,
+			Exclusive:  true,
+		})
+		require.NoError(t, err, "Failed to declare queue")
+
+		for _, body := range []string{"first", "second"} {
+			err = broker.Publish(ctx, "", queueName, amqp.Message{Body: []byte(body)}, amqp.PublishOptions{})
+			require.NoError(t, err, "Failed to publish message")
+		}
+
+		consumer, err := broker.Consume(ctx, queueName, amqp.ConsumeOptions{PrefetchCount: 1})
+		require.NoError(t, err, "Failed to start consumer")
+
+		defer consumer.Close()
+
+		first, err := consumer.Next(ctx)
+		require.NoError(t, err, "Failed to receive first message")
+		assert.Equal(t, []byte("first"), first.Message.Body)
+
+		tctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+
+		_, err = consumer.Next(tctx)
+		require.ErrorIs(t, err, context.DeadlineExceeded, "Second message delivered before ack")
+
+		err = consumer.Ack(ctx, first.DeliveryTag, amqp.AckOptions{})
+		require.NoError(t, err, "Failed to acknowledge message")
+
+		second, err := consumer.Next(ctx)
+		require.NoError(t, err, "Failed to receive second message")
+		assert.Equal(t, []byte("second"), second.Message.Body)
+	})
+}
+
 func TestBrokerStatsConsumingChannel(t *testing.T) {
 	amqptest.NewTestCase().Run(t, func(t *testing.T, broker amqp.Broker) {
 		ctx := context.Background()

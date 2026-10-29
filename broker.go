@@ -84,6 +84,15 @@ type ConsumeOptions struct {
 	// The queue will be deleted when the consumer disconnects.
 	Exclusive bool
 
+	// PrefetchCount is the maximum number of unacknowledged messages delivered
+	// to this consumer. 0 means unlimited.
+	PrefetchCount int
+
+	// PrefetchSize is the maximum size in bytes of unacknowledged messages
+	// delivered to this consumer. 0 means unlimited.
+	// Note: RabbitMQ does not implement this setting.
+	PrefetchSize int
+
 	// Args contains optional arguments for the consumer.
 	Args map[string]any
 }
@@ -154,21 +163,6 @@ type Delivery struct {
 	// RoutingKey  string
 }
 
-// QosOptions contains Quality of Service options for message delivery.
-type QosOptions struct {
-	// PrefetchCount is the maximum number of unacknowledged messages.
-	// 0 means unlimited.
-	PrefetchCount int
-
-	// PrefetchSize is the maximum size in bytes of unacknowledged messages.
-	// 0 means unlimited.
-	PrefetchSize int
-
-	// Global when true, applies QoS settings to the entire connection.
-	// When false, applies only to the current channel.
-	Global bool
-}
-
 // AckOptions contains options for acknowledging messages.
 type AckOptions struct {
 	// Multiple when true, acknowledges all messages up to and including
@@ -219,10 +213,6 @@ type Broker interface {
 	// Returns a Consumer that can be used to receive messages.
 	// The Consumer must be closed when no longer needed.
 	Consume(context.Context, string, ConsumeOptions) (Consumer, error)
-
-	// Qos sets Quality of Service parameters for message delivery.
-	// Controls prefetch count and size to limit unacknowledged messages.
-	Qos(context.Context, QosOptions) error
 
 	// DeclareQueue creates a queue or verifies that it exists with the given parameters.
 	// If the queue already exists with the same parameters, this is idempotent.

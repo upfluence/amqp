@@ -99,6 +99,8 @@ func (ac *anonymousConsumer) ConsumeAnonymous(ctx context.Context, opts amqp.Con
 		log.Field("queue", queue),
 		log.Field("consumer_tag", opts.Consumer),
 		log.Field("auto_ack", opts.AutoACK),
+		log.Field("prefetch_count", opts.PrefetchCount),
+		log.Field("prefetch_size", opts.PrefetchSize),
 	)
 
 	if err != nil {
@@ -152,6 +154,8 @@ func (b *broker) Consume(ctx context.Context, queue string, opts amqp.ConsumeOpt
 		log.Field("queue", queue),
 		log.Field("consumer_tag", opts.Consumer),
 		log.Field("auto_ack", opts.AutoACK),
+		log.Field("prefetch_count", opts.PrefetchCount),
+		log.Field("prefetch_size", opts.PrefetchSize),
 	)
 
 	if err != nil {
@@ -159,21 +163,6 @@ func (b *broker) Consume(ctx context.Context, queue string, opts amqp.ConsumeOpt
 	}
 
 	return &consumerWrapper{Consumer: c, l: b.l, queue: queue}, nil
-}
-
-func (b *broker) Qos(ctx context.Context, opts amqp.QosOptions) error {
-	t0 := time.Now()
-	err := b.b.Qos(ctx, opts)
-	b.l.Log(
-		"Qos",
-		err,
-		time.Since(t0),
-		log.Field("prefetch_count", opts.PrefetchCount),
-		log.Field("prefetch_size", opts.PrefetchSize),
-		log.Field("global", opts.Global),
-	)
-
-	return err //nolint:wrapcheck
 }
 
 func (b *broker) DeclareQueue(ctx context.Context, name string, opts amqp.DeclareQueueOptions) error {

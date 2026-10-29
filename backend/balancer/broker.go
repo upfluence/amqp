@@ -121,12 +121,6 @@ func (b *Broker) ConsumeAnonymous(ctx context.Context, opts amqp.ConsumeOptions)
 	return queue, newConsumer(c, done), nil
 }
 
-func (b *Broker) Qos(ctx context.Context, opts amqp.QosOptions) error {
-	return b.withBroker(ctx, func(b amqp.Broker) error {
-		return b.Qos(ctx, opts)
-	})
-}
-
 func (b *Broker) DeclareQueue(ctx context.Context, name string, opts amqp.DeclareQueueOptions) error {
 	return b.withBroker(ctx, func(b amqp.Broker) error {
 		return b.DeclareQueue(ctx, name, opts)

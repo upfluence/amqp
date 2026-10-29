@@ -188,13 +188,12 @@ err = broker.BindQueue(ctx, "tasks", "task.*", "work", amqp.BindQueueOptions{})
 
 ### Quality of Service (QoS)
 
-Control message prefetch:
+Prefetch is configured per consumer, on the consumer's own channel:
 
 ```go
-err := broker.Qos(ctx, amqp.QosOptions{
-    PrefetchCount: 10,  // Prefetch 10 messages at a time
-    PrefetchSize:  0,   // No limit on message size
-    Global:        false,
+consumer, err := broker.Consume(ctx, "tasks", amqp.ConsumeOptions{
+    PrefetchCount: 10,  // At most 10 unacknowledged messages in flight
+    PrefetchSize:  0,   // No limit on message size (not implemented by RabbitMQ)
 })
 ```
 
