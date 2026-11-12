@@ -2,6 +2,8 @@ package balancer
 
 import (
 	"context"
+	"math/rand/v2"
+	"sync"
 	"sync/atomic"
 
 	"github.com/upfluence/errors"
@@ -22,16 +24,27 @@ var ErrNoBrokerAvailable = errors.New("balancer/picker: no broker available")
 //     idle channel available — this packs work onto already-warm brokers
 //     and avoids opening new connections unnecessarily.
 //  3. If no broker has both a connection and an idle channel (all are fully
-//     saturated), pick the first connected broker.
+//     saturated), round-robin across the connected brokers.
 //  4. If no broker has an open connection at all, round-robin across all
 //     candidates so that connection attempts are spread evenly.
 //
+// The round-robin starts at a random position, so that processes sharing the
+// same list of brokers do not all open their first connection to the same
+// one.
+//
 // Picker is safe for concurrent use. Its zero value is ready to use.
 type Picker struct {
+	once  sync.Once
 	index atomic.Uint64
 }
 
 var _ simple.Picker[BrokerWrapper] = (*Picker)(nil)
+
+func (p *Picker) next() uint64 {
+	p.once.Do(func() { p.index.Store(rand.Uint64()) }) //nolint:gosec
+
+	return p.index.Add(1) - 1
+}
 
 func (p *Picker) Pick(_ context.Context, peers []BrokerWrapper) (BrokerWrapper, error) {
 	if len(peers) == 0 {
@@ -73,17 +86,21 @@ func (p *Picker) Pick(_ context.Context, peers []BrokerWrapper) (BrokerWrapper, 
 	}
 
 	// Phase 2: connected brokers but none with an idle channel (all fully
-	// saturated). Pick the first connected broker; at this point all have
-	// zero idle channels so there is no meaningful tiebreak.
-	for i, c := range candidates {
+	// saturated). Round-robin across them; at this point all have zero idle
+	// channels so there is no meaningful tiebreak.
+	var connected []BrokerWrapper
+
+	for _, c := range candidates {
 		if c.stats.ConnectionOpened {
-			return candidates[i].bw, nil
+			connected = append(connected, c.bw)
 		}
+	}
+
+	if len(connected) > 0 {
+		return connected[p.next()%uint64(len(connected))], nil
 	}
 
 	// Phase 3: no broker has an open connection; round-robin across all
 	// candidates so that connection attempts are spread evenly.
-	idx := p.index.Add(1) - 1
-
-	return candidates[idx%uint64(len(candidates))].bw, nil
+	return candidates[p.next()%uint64(len(candidates))].bw, nil
 }
