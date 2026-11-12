@@ -105,7 +105,7 @@ func (c *consumer) cleanup(inboundError error) error {
 
 	c.closedOnce.Do(func() {
 		c.closed.Store(true)
-		c.broker.consuming.Add(-1)
+		c.broker.untrackConsumer(c)
 
 		if inboundError == nil {
 			err = c.channel.Cancel(c.consumer, false)

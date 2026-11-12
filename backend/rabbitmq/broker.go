@@ -8,7 +8,9 @@ import (
 	"context"
 	"maps"
 	"net"
+	"slices"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -83,10 +85,18 @@ type Broker struct {
 	limiter limiter.Limiter
 	dialer  *net.Dialer
 
-	consuming atomic.Int64
+	// consumers holds the open consumers, closed by Close: each one holds a
+	// channel, and the channel pool waits for every channel to be released
+	// before closing.
+	consumersMu sync.Mutex
+	consumers   map[*consumer]struct{}
+	closing     bool
 
 	channelPool *iopool.Pool[*channelWrapper]
 }
+
+// ErrBrokerClosed is returned when a consumer is started on a closed broker.
+var ErrBrokerClosed = errors.New("broker is closed")
 
 var consumerSeq atomic.Uint64
 
@@ -116,10 +126,11 @@ func NewBroker(uri string, opts ...Option) *Broker {
 	}
 
 	b := Broker{
-		uri:     uri,
-		cfg:     o.amqpConfig(),
-		limiter: o.limiter,
-		dialer:  o.dialer,
+		uri:       uri,
+		cfg:       o.amqpConfig(),
+		limiter:   o.limiter,
+		dialer:    o.dialer,
+		consumers: make(map[*consumer]struct{}),
 	}
 
 	b.channelPool = iopool.NewPool(b.buildChannel, o.channelPoolOptions...)
@@ -132,11 +143,15 @@ func (b *Broker) Stats() BrokerStats {
 	stats := b.channelPool.Stats()
 	conn := b.conn.Load()
 
+	b.consumersMu.Lock()
+	consuming := len(b.consumers)
+	b.consumersMu.Unlock()
+
 	return BrokerStats{
 		ConnectionOpened: conn != nil && !conn.IsClosed(),
 		IdleChannel:      int(stats.Idle),
 		InUseChannel:     int(stats.InUse),
-		ConsumingChannel: int(b.consuming.Load()),
+		ConsumingChannel: consuming,
 	}
 }
 
@@ -194,15 +209,51 @@ func (b *Broker) getConn(ctx context.Context) (*ramqp.Connection, error) {
 	return conn, err
 }
 
-// Close closes the broker, releasing all channels and the connection.
+// Close closes the broker: the consumers still open first, so that their
+// channels are released, then the channels and the connection.
 func (b *Broker) Close() error {
-	err := b.channelPool.Close()
+	b.consumersMu.Lock()
+	b.closing = true
+	cs := slices.Collect(maps.Keys(b.consumers))
+	b.consumersMu.Unlock()
 
-	if conn := b.conn.Load(); conn != nil && !conn.IsClosed() {
-		err = errors.Combine(err, conn.Close())
+	var errs []error
+
+	for _, c := range cs {
+		// The cancellation fails when the connection is already gone, the
+		// channel is released all the same.
+		if err := c.Close(); err != nil && !errors.Is(err, ramqp.ErrClosed) {
+			errs = append(errs, err)
+		}
 	}
 
-	return err
+	errs = append(errs, b.channelPool.Close())
+
+	if conn := b.conn.Load(); conn != nil && !conn.IsClosed() {
+		errs = append(errs, conn.Close())
+	}
+
+	return errors.Combine(errs...)
+}
+
+// trackConsumer records an open consumer, unless the broker is closing.
+func (b *Broker) trackConsumer(c *consumer) bool {
+	b.consumersMu.Lock()
+	defer b.consumersMu.Unlock()
+
+	if b.closing {
+		return false
+	}
+
+	b.consumers[c] = struct{}{}
+
+	return true
+}
+
+func (b *Broker) untrackConsumer(c *consumer) {
+	b.consumersMu.Lock()
+	delete(b.consumers, c)
+	b.consumersMu.Unlock()
 }
 
 // Publish sends a message to an exchange with a routing key.
@@ -327,14 +378,21 @@ func (b *Broker) consumeFromQueue(ctx context.Context, ch *channelWrapper, queue
 		return nil, errors.Wrap(err, "failed to start consuming from queue")
 	}
 
-	b.consuming.Add(1)
-
-	return &consumer{
+	c := &consumer{
 		broker:     b,
 		consumer:   tag,
 		channel:    ch,
 		deliveries: deliveries,
-	}, nil
+	}
+
+	if !b.trackConsumer(c) {
+		_ = ch.Cancel(tag, false)
+		b.discardChannel(ch)
+
+		return nil, ErrBrokerClosed
+	}
+
+	return c, nil
 }
 
 func (b *Broker) execute(ctx context.Context, fn func(*ramqp.Channel) error) error {

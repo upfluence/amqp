@@ -176,3 +176,38 @@ func TestBrokerStatsConsumingChannel(t *testing.T) {
 		assert.Equal(t, 0, stats.ConsumingChannel)
 	})
 }
+
+func TestBrokerCloseWithOpenConsumer(t *testing.T) {
+	amqptest.NewTestCase().Run(t, func(t *testing.T, broker amqp.Broker) {
+		ctx := context.Background()
+
+		queueName := fmt.Sprintf("test-close-queue-%d", time.Now().UnixNano())
+
+		err := broker.DeclareQueue(ctx, queueName, amqp.DeclareQueueOptions{
+			AutoDelete: true,
+			Exclusive:  true,
+		})
+		require.NoError(t, err, "Failed to declare queue")
+
+		// Never closed by the test, Close has to release it.
+		consumer, err := broker.Consume(ctx, queueName, amqp.ConsumeOptions{})
+		require.NoError(t, err, "Failed to start consumer")
+
+		closed := make(chan error, 1)
+
+		go func() { closed <- broker.Close() }()
+
+		select {
+		case err := <-closed:
+			require.NoError(t, err, "Failed to close the broker")
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "Close blocked on the open consumer")
+		}
+
+		assert.False(t, consumer.IsOpen())
+		assert.Equal(t, rabbitmq.BrokerStats{}, rabbitmq.GetStats(broker))
+
+		_, err = broker.Consume(ctx, queueName, amqp.ConsumeOptions{})
+		assert.Error(t, err, "Consume succeeded on a closed broker")
+	})
+}
