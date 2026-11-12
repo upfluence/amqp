@@ -10,6 +10,7 @@ import (
 	"github.com/upfluence/pkg/v2/discovery/balancer"
 	"github.com/upfluence/pkg/v2/discovery/balancer/simple"
 	"github.com/upfluence/pkg/v2/discovery/resolver/static"
+	"github.com/upfluence/pkg/v2/syncutil"
 
 	"github.com/upfluence/amqp"
 	"github.com/upfluence/amqp/backend/rabbitmq"
@@ -37,16 +38,43 @@ type Balancer = balancer.Balancer[BrokerWrapper]
 // Exclusive queues are bound to the connection that declared them, so once
 // an exclusive queue is declared, every later operation on it is routed to
 // the same underlying broker for as long as its connection stays open.
+//
+// By default the Broker owns its balancer: it opens it on first use, and
+// Close closes it along with the brokers picked from it. With
+// BorrowedBalancer, the caller remains in charge of both.
 type Broker struct {
-	b    Balancer
-	opts balancer.GetOptions
+	b        Balancer
+	opts     balancer.GetOptions
+	borrowed bool
+
+	openOnce syncutil.RetryableOnce
 
 	mu     sync.Mutex
 	pinned map[string]amqp.Broker
+	picked map[amqp.Broker]struct{}
 }
 
-func NewBroker(b Balancer, opts balancer.GetOptions) *Broker {
-	return &Broker{b: b, opts: opts, pinned: make(map[string]amqp.Broker)}
+// Option configures a Broker.
+type Option func(*Broker)
+
+// BorrowedBalancer makes the Broker use a balancer it does not own: the
+// caller opens it before using the Broker, and closes it along with the
+// brokers it balances over once done.
+var BorrowedBalancer Option = func(b *Broker) { b.borrowed = true }
+
+func NewBroker(b Balancer, gopts balancer.GetOptions, opts ...Option) *Broker {
+	nb := Broker{
+		b:      b,
+		opts:   gopts,
+		pinned: make(map[string]amqp.Broker),
+		picked: make(map[amqp.Broker]struct{}),
+	}
+
+	for _, opt := range opts {
+		opt(&nb)
+	}
+
+	return &nb
 }
 
 func NewDefaultBroker(bs ...BrokerWrapper) *Broker {
@@ -56,18 +84,62 @@ func NewDefaultBroker(bs ...BrokerWrapper) *Broker {
 	return NewBroker(b, balancer.GetOptions{})
 }
 
+// Close closes the balancer and the brokers picked from it, unless the
+// balancer is borrowed. A broker only connects once used, so the brokers
+// never picked hold no connection.
 func (b *Broker) Close() error {
-	return b.b.Close()
+	if b.borrowed {
+		return nil
+	}
+
+	b.mu.Lock()
+	picked := b.picked
+	b.picked = make(map[amqp.Broker]struct{})
+	b.mu.Unlock()
+
+	errs := []error{b.b.Close()}
+
+	for pb := range picked {
+		errs = append(errs, pb.Close())
+	}
+
+	return errors.Combine(errs...)
+}
+
+// get picks a broker from the balancer, opening the balancer first and
+// recording the picked broker for Close unless the balancer is borrowed. A
+// failed open is retried by the next call, so that a transient failure does
+// not leave the Broker unusable.
+func (b *Broker) get(ctx context.Context) (amqp.Broker, func(error), error) {
+	if !b.borrowed {
+		if err := b.openOnce.Do(func() error { return b.b.Open(ctx) }); err != nil {
+			return nil, nil, errors.Wrap(err, "cant open the balancer")
+		}
+	}
+
+	pb, done, err := b.b.Get(ctx, b.opts)
+
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "cant pick a broker")
+	}
+
+	if !b.borrowed {
+		b.mu.Lock()
+		b.picked[pb.Broker] = struct{}{}
+		b.mu.Unlock()
+	}
+
+	return pb.Broker, done, nil
 }
 
 func (b *Broker) withBroker(ctx context.Context, fn func(amqp.Broker) error) error {
-	pb, done, err := b.b.Get(ctx, b.opts)
+	pb, done, err := b.get(ctx)
 
 	if err != nil {
 		return err
 	}
 
-	err = fn(pb.Broker)
+	err = fn(pb)
 
 	done(err)
 
@@ -122,13 +194,13 @@ func (b *Broker) Consume(ctx context.Context, queue string, opts amqp.ConsumeOpt
 		return c, errors.WithStack(err)
 	}
 
-	pb, done, err := b.b.Get(ctx, b.opts)
+	pb, done, err := b.get(ctx)
 
 	if err != nil {
 		return nil, err
 	}
 
-	c, err := pb.Broker.Consume(ctx, queue, opts)
+	c, err := pb.Consume(ctx, queue, opts)
 
 	if err != nil {
 		done(err)
@@ -140,16 +212,16 @@ func (b *Broker) Consume(ctx context.Context, queue string, opts amqp.ConsumeOpt
 }
 
 func (b *Broker) ConsumeAnonymous(ctx context.Context, opts amqp.ConsumeOptions) (string, amqp.Consumer, error) {
-	pb, done, err := b.b.Get(ctx, b.opts)
+	pb, done, err := b.get(ctx)
 
 	if err != nil {
 		return "", nil, err
 	}
 
-	ac, ok := pb.Broker.(amqp.AnonymousConsumer)
+	ac, ok := pb.(amqp.AnonymousConsumer)
 
 	if !ok {
-		c, err := aconsumer.BuildConsumer(ctx, pb.Broker, opts)
+		c, err := aconsumer.BuildConsumer(ctx, pb, opts)
 
 		if err != nil {
 			done(err)
