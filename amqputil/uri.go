@@ -10,18 +10,23 @@ import (
 )
 
 // peerTable converts peer information to AMQP connection properties.
-// These properties are visible in the RabbitMQ management UI.
+// These properties are visible in the RabbitMQ management UI, and
+// connection_name also names the connection in the RabbitMQ logs.
 func peerTable(p *peer.Peer) map[string]any {
 	if p == nil {
 		return nil
 	}
 
+	name := p.URL().String()
+
 	return map[string]any{
-		"upfluence-unit-name":    p.InstanceName,
-		"upfluence-app-name":     p.AppName,
-		"upfluence-project-name": p.ProjectName,
-		"upfluence-env":          p.Environment,
-		"upfluence-version":      p.Version.String(),
+		"connection_name":           name,
+		"upfluence-connection-name": name,
+		"upfluence-unit-name":       p.InstanceName,
+		"upfluence-app-name":        p.AppName,
+		"upfluence-project-name":    p.ProjectName,
+		"upfluence-env":             p.Environment,
+		"upfluence-version":         p.Version.String(),
 	}
 }
 
