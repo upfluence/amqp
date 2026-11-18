@@ -3,7 +3,7 @@ module github.com/upfluence/amqp
 go 1.24.0
 
 require (
-	github.com/rabbitmq/amqp091-go v1.10.0
+	github.com/rabbitmq/amqp091-go v1.17.0
 	github.com/stretchr/testify v1.11.1
 	github.com/upfluence/errors v0.2.18
 	github.com/upfluence/log v0.0.6
